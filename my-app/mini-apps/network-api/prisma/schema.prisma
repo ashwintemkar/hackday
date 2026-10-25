@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id              String          @id @default(cuid())
+  name            String          @unique
+  model           String
+  firmwareVersion String
+  interfaces      Interface[]
+  flapEvents      FlapEvent[]
+  macEntries      MacEntry[]
+  logLines        LogLine[]
+}
+
+model Interface {
+  id             String          @id @default(cuid())
+  deviceId       String
+  device         Device          @relation(fields: [deviceId], references: [id])
+  name           String
+  crcErrors24h   Int
+  resets24h      Int
+  status         String
+  counterSamples CounterSample[]
+}
+
+model CounterSample {
+  id          String    @id @default(cuid())
+  interfaceId String
+  interface   Interface @relation(fields: [interfaceId], references: [id])
+  sampledAt   DateTime
+  crcErrors   Int
+}
+
+model FlapEvent {
+  id            String   @id @default(cuid())
+  deviceId      String
+  device        Device   @relation(fields: [deviceId], references: [id])
+  interfaceName String
+  occurredAt    DateTime
+  note          String
+}
+
+model MacEntry {
+  id            String   @id @default(cuid())
+  deviceId      String
+  device        Device   @relation(fields: [deviceId], references: [id])
+  interfaceName String
+  macAddress    String
+  vlan          Int
+  learnedAt     DateTime
+}
+
+model LogLine {
+  id       String   @id @default(cuid())
+  deviceId String
+  device   Device   @relation(fields: [deviceId], references: [id])
+  loggedAt DateTime
+  text     String
+}
+
+model KnownIssue {
+  id                 String @id @default(cuid())
+  issueRef           String @unique
+  matchModel         String
+  matchFirmwareRange String // human readable, for display
+  affectedVersions   String // comma separated exact versions, for matching
+  symptom            String
+  rootCause          String
+  fixedInVersion     String
+  recommendedAction  String
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  target    String
+  outcome   String
+  detail    String?
+  createdAt DateTime @default(now())
+}

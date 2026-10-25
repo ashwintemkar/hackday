@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Card {
+  id             String        @id @default(cuid())
+  last4          String
+  cardholderName String
+  status         String
+  transactions   Transaction[]
+  knownDevices   KnownDevice[]
+}
+
+model Transaction {
+  id                String   @id @default(cuid())
+  cardId            String
+  card              Card     @relation(fields: [cardId], references: [id])
+  amount            Float
+  merchantName      String
+  merchantLocation  String
+  occurredAt        DateTime
+  deviceFingerprint String
+}
+
+model KnownDevice {
+  id          String   @id @default(cuid())
+  cardId      String
+  card        Card     @relation(fields: [cardId], references: [id])
+  fingerprint String
+  firstSeenAt DateTime
+}
+
+model Merchant {
+  id                String @id @default(cuid())
+  name              String @unique
+  chargebackRatePct Float
+  riskLevel         String
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  target    String
+  outcome   String
+  detail    String?
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model PurchaseOrder {
+  id           String    @id @default(cuid())
+  poNumber     String    @unique
+  description  String
+  quantity     Int
+  unit         String
+  expectedDate DateTime
+  status       String
+  shipment     Shipment?
+}
+
+model Shipment {
+  id               String        @id @default(cuid())
+  poId             String        @unique
+  po               PurchaseOrder @relation(fields: [poId], references: [id])
+  carrierStatus    String
+  heldSince        DateTime?
+  releaseTimeKnown Boolean
+  notes            String?
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  target    String
+  outcome   String
+  detail    String?
+  createdAt DateTime @default(now())
+}

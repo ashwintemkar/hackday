@@ -13,6 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres/pgvector-chunks.sql:/docker-entrypoint-initdb.d/pgvector-chunks.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ticketly"]
       interval: 5s
@@ -57,14 +58,31 @@ services:
     ports:
       - "8080:8080"
 
-  # Local Gemma inference for dev/demo. Prod points at the Jarvislabs GPU
-  # endpoint instead (set GEMMA_ENDPOINT in .env) — see ARCHITECTURE.md.
+  # Local Gemma inference for dev/demo. Prod points at Jarvislabs instead (set
+  # JARVISLABS_API_KEY/JARVISLABS_ENDPOINT in .env) — see ARCHITECTURE.md. Also serves
+  # nomic-embed-text, the embedding model lib/pgvector/* uses (ollama-pull-models provisions it
+  # below so this is never a manual step after `docker compose up`).
   ollama:
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama-pull-models:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["ollama", "pull", "nomic-embed-text"]
+    restart: "no"
 
   # CI gate: lint + unit tests + security scan before any image is built.
   jenkins:
@@ -87,6 +105,16 @@ services:
       DATABASE_URL: postgres://ticketly:ticketly@postgres:5432/ticketly
       TEMPORAL_ADDRESS: temporal:7233
       GEMMA_ENDPOINT: http://ollama:11434
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text
+      # Jarvislabs has no local/offline equivalent - these come from the host's .env (gitignored)
+      # at `docker compose up` time, same as JIRA_* below.
+      JARVISLABS_API_KEY: ${JARVISLABS_API_KEY}
+      JARVISLABS_ENDPOINT: ${JARVISLABS_ENDPOINT:-https://models.jarvislabs.net/v1}
+      JARVISLABS_MODEL: ${JARVISLABS_MODEL:-gemma-4-31b-it}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}
     ports:
       - "3000:3000"
 

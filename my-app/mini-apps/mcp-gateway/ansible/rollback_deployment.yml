@@ -1,0 +1,22 @@
+---
+- name: Roll back a deployed service version
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Call ops-api to roll back the deployment
+      uri:
+        url: "{{ ops_api_url }}/deployments/{{ service }}/rollback"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ lookup('env', 'OPS_APPROVAL_TOKEN') }}"
+          x-actor: "mcp-gateway-ansible"
+        body_format: json
+        body:
+          toVersion: "{{ to_version }}"
+        status_code: 200
+      register: rollback_result
+
+    - name: Show the result
+      debug:
+        var: rollback_result.json
