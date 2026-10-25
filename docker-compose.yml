@@ -1,0 +1,97 @@
+name: ticketly
+
+services:
+  # App + vector store: tickets, knowledge base, past-resolution embeddings.
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ticketly
+      POSTGRES_PASSWORD: ticketly
+      POSTGRES_DB: ticketly
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Temporal needs its own persistence store, kept separate from the app DB.
+  temporal-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - temporal_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: temporal-postgres
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: "http://localhost:3000"
+    ports:
+      - "8080:8080"
+
+  # Local Gemma inference for dev/demo. Prod points at the Jarvislabs GPU
+  # endpoint instead (set GEMMA_ENDPOINT in .env) — see ARCHITECTURE.md.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # CI gate: lint + unit tests + security scan before any image is built.
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    ports:
+      - "8081:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_data:/var/jenkins_home
+
+  app:
+    build:
+      context: ./my-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://ticketly:ticketly@postgres:5432/ticketly
+      TEMPORAL_ADDRESS: temporal:7233
+      GEMMA_ENDPOINT: http://ollama:11434
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  temporal_postgres_data:
+  ollama_data:
+  jenkins_data:
