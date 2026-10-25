@@ -48,8 +48,33 @@ here.
 - Any LangGraph graph wiring those steps together (split → embed → store;
   query → embed → retrieve), to be called from Temporal's "embed + retrieve
   context" activity.
-- Any API route or activity code touching `knowledge_base_chunks` /
-  `resolved_tickets` / `tickets` at all.
+- The `TicketResolutionWorkflow` itself and its activities (embed+retrieve,
+  ask Gemma, execute/auto-resolve, escalate to human) — no Temporal worker
+  exists yet. `POST /api/tickets` (below) starts this workflow by name
+  already, so it'll pick up and run as soon as a worker registers
+  `TicketResolutionWorkflow` on the `ticket-resolution` task queue (see
+  `lib/temporal/client.ts`); until then it just queues harmlessly.
+- Ingesting resolved tickets into `resolved_tickets`, or documents into
+  `knowledge_base_chunks` — i.e. anything that writes an *embedding*. Still
+  open, see below.
+
+## What's built
+
+- **`POST /api/tickets`** (`app/api/tickets/route.ts`) — the ticket-intake
+  endpoint from ARCHITECTURE.md's flow diagram. Validates
+  `{ source: 'portal'|'jira'|'slack', title, description, externalRef? }`
+  (`lib/tickets/schema.ts`), inserts into `tickets` + a first
+  `ticket_audit_log` row atomically (`lib/tickets/repository.ts`), then
+  best-effort starts `TicketResolutionWorkflow` on Temporal
+  (`lib/temporal/client.ts`) — a Temporal outage logs an audit entry and
+  leaves `workflow_id` null rather than failing the request, since the
+  ticket is already durably stored by that point.
+- **`GET /api/tickets`** — lists recent tickets (`?limit=`, default 50, max
+  200).
+- **`GET /api/tickets/[id]`** — one ticket plus its full audit trail.
+- Verified end-to-end against a disposable `pgvector/pg16` container seeded
+  with `docker/postgres/init.sql` (create/validate/list/detail, and the
+  Temporal-unreachable degradation path).
 
 ## Reference implementation: platform-nexagrid
 
@@ -81,23 +106,24 @@ pgvector query/index patterns transfer directly.
 
 The brief for this work was "create a functionality wherein we should be
 accepting the shipped functionality," which was never pinned down to one
-of the following (ask the user which, or re-read their latest messages for
-clarification):
+of the following:
 
-1. **Ticket intake API** — the `/api/tickets` endpoint from
-   ARCHITECTURE.md's flow diagram, accepting tickets from Portal/Jira/Slack.
+1. ~~**Ticket intake API**~~ — **resolved & built**: the user confirmed this
+   was the `/api/tickets` endpoint from ARCHITECTURE.md's flow diagram
+   (see "What's built" above).
 2. **Ingest resolved ("shipped") tickets into the KB** — accept a ticket
    that's been closed/resolved and write its summary+resolution into
    `resolved_tickets` (embedded), so future retrieval can learn from it.
+   Still open.
 3. **Port platform-nexagrid's pipeline shape** — adapt its
    split → embed → store script into a LangGraph graph against
    `knowledge_base_chunks`, swapping Bedrock/Pinecone for Ollama/pgvector.
+   Still open.
 
 (2) and (3) are not mutually exclusive — (3) is the generic chunk-ingestion
 graph; (2) is one concrete caller of it, for ticket resolutions specifically.
-(1) is unrelated to RAG ingestion itself (it's the ticket-creation path) but
-was raised in the same conversation, so it's listed here in case that's what
-was actually meant.
+Neither is built yet; resolve which (or both, in which order) before
+starting.
 
 ## Suggested next step
 
